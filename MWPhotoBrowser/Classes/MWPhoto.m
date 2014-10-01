@@ -34,6 +34,14 @@
 	return [[MWPhoto alloc] initWithImage:image];
 }
 
++ (NSArray *)photosWithImages:(NSArray *)images {
+    NSMutableArray *mwphotos = [NSMutableArray array];
+    for (UIImage *image in images) {
+        [mwphotos addObject:[self photoWithImage:image]];
+    }
+    return mwphotos;
+}
+
 // Deprecated
 + (MWPhoto *)photoWithFilePath:(NSString *)path {
     return [MWPhoto photoWithURL:[NSURL fileURLWithPath:path]];
@@ -41,6 +49,22 @@
 
 + (MWPhoto *)photoWithURL:(NSURL *)url {
 	return [[MWPhoto alloc] initWithURL:url];
+}
+
++ (NSArray *)photosWithUrls:(NSArray *)urls {
+    NSMutableArray *mwphotos = [NSMutableArray array];
+    for (NSString *url in urls) {
+        [mwphotos addObject:[[MWPhoto alloc] initWithURL:[NSURL URLWithString:url]]];
+    }
+    return mwphotos;
+}
+
++ (NSArray *)imagesFromPhotos:(NSArray *)photos {
+    NSMutableArray *images = [NSMutableArray array];
+    for (MWPhoto *photo in photos) {
+        [images addObject:[photo underlyingImage]];
+    }
+    return [images copy];
 }
 
 #pragma mark - Init

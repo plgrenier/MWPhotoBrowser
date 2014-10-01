@@ -23,6 +23,11 @@
 + (MWPhoto *)photoWithImage:(UIImage *)image;
 + (MWPhoto *)photoWithFilePath:(NSString *)path  __attribute__((deprecated("Use photoWithURL: with a file URL"))); // Depreciated
 + (MWPhoto *)photoWithURL:(NSURL *)url;
++ (NSArray *)photosWithImages:(NSArray *)images;
++ (NSArray *)photosWithUrls:(NSArray *)urls;
+
+// Return UIImages from MWPhotos
++ (NSArray *)imagesFromPhotos:(NSArray *)photos;
 
 - (id)initWithImage:(UIImage *)image;
 - (id)initWithURL:(NSURL *)url;

@@ -66,7 +66,7 @@
     _currentPageIndex = 0;
     _previousPageIndex = NSUIntegerMax;
     _displayActionButton = YES;
-    _displayNavArrows = NO;
+    _displayNavArrows = YES;
     _zoomPhotosToFill = YES;
     _performingLayout = NO; // Reset on view did appear
     _rotating = NO;
@@ -184,7 +184,15 @@
         _previousButton = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:[NSString stringWithFormat:arrowPathFormat, @"Left"]] style:UIBarButtonItemStylePlain target:self action:@selector(gotoPreviousPage)];
         _nextButton = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:[NSString stringWithFormat:arrowPathFormat, @"Right"]] style:UIBarButtonItemStylePlain target:self action:@selector(gotoNextPage)];
     }
-    if (self.displayActionButton) {
+    if (self.isPhotosEditable) {
+        _actionButton = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"check"] style:UIBarButtonItemStyleBordered target:self action:@selector(finishButtonPressed:)];
+        _deleteButton = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"trash"] style:UIBarButtonItemStyleBordered target:self action:@selector(deleteButtonPressed:)];
+        _mainPhotoButton = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"ic-asterisk"] style:UIBarButtonItemStyleBordered target:self action:@selector(mainButtonPressed:)];
+        _camButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCamera target:self action:@selector(camButtonPressed:)];
+        
+        //[self.navigationItem setRightBarButtonItem:_mainPhotoButton animated:NO];
+    }
+    else if (self.displayActionButton) {
         _actionButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction target:self action:@selector(actionButtonPressed:)];
     }
     
@@ -214,7 +222,14 @@
     [_recycledPages removeAllObjects];
     
     // Navigation buttons
-    if ([self.navigationController.viewControllers objectAtIndex:0] == self) {
+    if (self.isPhotosEditable) {
+        if (self.fromCamController) {
+            self.navigationItem.rightBarButtonItem = _mainPhotoButton;
+        }
+        else {
+            [self.navigationItem setRightBarButtonItems:@[_camButton, _mainPhotoButton] animated:NO];
+        }
+    } else if (self.navigationController.viewControllers[0] == self && !self.isPhotosEditable) {
         // We're first on stack so show done button
         _doneButton = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Done", nil) style:UIBarButtonItemStylePlain target:self action:@selector(doneButtonPressed:)];
         // Set appearance
@@ -252,8 +267,10 @@
     UIBarButtonItem *flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:self action:nil];
     NSMutableArray *items = [[NSMutableArray alloc] init];
 
-    // Left button - Grid
-    if (_enableGrid) {
+    if (self.isPhotosEditable) { // Left button - Trash
+        hasItems = YES;
+        [items addObject:_deleteButton];
+    } else if (_enableGrid) { // Left button - Grid
         hasItems = YES;
         NSString *buttonName = @"UIBarButtonItemGrid";
         if (SYSTEM_VERSION_LESS_THAN(@"7")) buttonName = @"UIBarButtonItemGridiOS6";
@@ -261,7 +278,7 @@
     } else {
         [items addObject:fixedSpace];
     }
-
+    
     // Middle - Nav
     if (_previousButton && _nextButton && numberOfPhotos > 1) {
         hasItems = YES;
@@ -348,6 +365,8 @@
 	// Super
 	[super viewWillAppear:animated];
     
+    self.navigationController.navigationBar.hidden = NO;
+    
     // Status bar
     if ([UIViewController instancesRespondToSelector:@selector(prefersStatusBarHidden)]) {
         _leaveStatusBarAlone = [self presentingViewControllerPrefersStatusBarHidden];
@@ -370,7 +389,7 @@
             [[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleBlackTranslucent animated:animated];
 #pragma clang diagnostic push
         } else {
-            [[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleDefault animated:animated];
+            //[[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleDefault animated:animated];
         }
     }
     
@@ -419,6 +438,10 @@
 #endif
     if (!_leaveStatusBarAlone && fullScreen && UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone) {
         [[UIApplication sharedApplication] setStatusBarStyle:_previousStatusBarStyle animated:animated];
+    }
+    
+    if ([_delegate respondsToSelector:@selector(photoBrowserWillDisappear:)]) {
+        [_delegate photoBrowserWillDisappear:self];
     }
     
 	// Super
@@ -558,6 +581,10 @@
 }
 
 #pragma mark - Rotation
+
+-(BOOL)shouldAutorotate {
+    return YES;
+}
 
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)toInterfaceOrientation {
     return YES;
@@ -1086,7 +1113,8 @@
 	_previousButton.enabled = (_currentPageIndex > 0);
 	_nextButton.enabled = (_currentPageIndex < numberOfPhotos - 1);
     _actionButton.enabled = [[self photoAtIndex:_currentPageIndex] underlyingImage] != nil;
-	
+	_deleteButton.enabled = numberOfPhotos > 0;
+    _mainPhotoButton.enabled = (_currentPageIndex > 0);
 }
 
 - (void)jumpToPageAtIndex:(NSUInteger)index animated:(BOOL)animated {
@@ -1515,10 +1543,7 @@
                         [weakSelf hideControlsAfterDelay];
                         [weakSelf hideProgressHUD:YES];
                     }];
-                    // iOS 8 - Set the Anchor Point for the popover
-                    if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"8")) {
-                        self.activityViewController.popoverPresentationController.barButtonItem = _actionButton;
-                    }
+
                     [self presentViewController:self.activityViewController animated:YES completion:nil];
                     
                 }
@@ -1529,6 +1554,67 @@
             [self setControlsHidden:NO animated:YES permanent:YES];
 
         }
+    }
+}
+
+- (void)deleteButtonPressed:(id)sender {
+    if ([_delegate respondsToSelector:@selector(photoBrowser:removePhotoAtIndex:)]) {
+        [_delegate photoBrowser:self removePhotoAtIndex:_currentPageIndex];
+    }
+    
+    if ([self numberOfPhotos] - 1 == 0) {
+        if (self.fromCamController) {
+            [self.navigationController popViewControllerAnimated:YES];
+        }
+        else {
+            if ([_delegate respondsToSelector:@selector(photoBrowserDidFinishModalPresentation:)]) {
+                [_delegate photoBrowserDidFinishModalPresentation:self];
+            }
+            else {
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }
+        }
+        
+        return;
+    }
+    
+    for (MWZoomingScrollView *page in _visiblePages) {
+		if (page.index == _currentPageIndex) {
+            [page prepareForReuse];
+			[page removeFromSuperview];
+		}
+	}
+    
+    if ([self numberOfPhotos] > 0 && _currentPageIndex == [self numberOfPhotos])
+        _currentPageIndex--;
+    
+    [self reloadData];
+}
+
+- (void)mainButtonPressed:(id)sender {
+    if ([_delegate respondsToSelector:@selector(photoBrowser:removePhotoAtIndex:)]) {
+        [_delegate photoBrowser:self movePhotoFromIndex:_currentPageIndex atIndex:0];
+    }
+    [self jumpToPageAtIndex:0 animated:NO];
+    [self updateNavigation];
+    [self reloadData];
+}
+
+- (void)camButtonPressed:(id)sender {
+    AVCamViewController *camController = [[AVCamViewController alloc] initWithNibName:@"AVCamViewController" bundle:nil];
+    camController.finishButtonText = NSLocalizedString(@"DONE", nil);
+    camController.allowReRotate = YES;
+    camController.delegate = self;
+
+    [self presentModalViewController:camController animated:YES];
+}
+
+- (void)finishButtonPressed:(id)sender  {
+    if ([_delegate respondsToSelector:@selector(photoBrowserDidFinishModalPresentation:)]) {
+        // Call delegate method and let them dismiss us
+        [_delegate photoBrowserDidFinishModalPresentation:self];
+    } else  {
+        [self dismissViewControllerAnimated:YES completion:nil];
     }
 }
 
@@ -1660,6 +1746,22 @@
 		[alert show];
     }
     [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+#pragma mark AVCamViewControllerDelegate
+
+- (void)didFinish:(AVCamViewController *)controller capturePhotos:(NSArray *)photos {
+    if ([_delegate respondsToSelector:@selector(didFinish:captureNewPhotos:)]) {
+        [(id<AVCamViewControllerDelegate>)_delegate didFinish:controller captureNewPhotos:photos];
+    }
+
+    [controller dismissViewControllerAnimated:YES completion:^{
+        [self reloadData];
+        [self jumpToPageAtIndex:[self numberOfPhotos] - 1 animated:YES];
+    }];
+}
+
+- (void)didCancelCapturePhotos {
 }
 
 @end
